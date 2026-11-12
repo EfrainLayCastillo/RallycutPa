@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Host entrypoint: runs scripts/pipeline.sh inside the tools container.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+exec docker compose run --rm -T ${CONFIG:+-e CONFIG="$CONFIG"} tools scripts/pipeline.sh "$@" 2> >(grep -v -e '^ *Network' -e 'Creat' >&2)

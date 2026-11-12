@@ -1,0 +1,55 @@
+{
+  "source_size": [
+    1280,
+    720
+  ],
+  "roi": [
+    [
+      340,
+      330
+    ],
+    [
+      930,
+      330
+    ],
+    [
+      930,
+      455
+    ],
+    [
+      1280,
+      560
+    ],
+    [
+      1280,
+      720
+    ],
+    [
+      0,
+      720
+    ],
+    [
+      0,
+      585
+    ],
+    [
+      340,
+      460
+    ]
+  ],
+  "net_y": 460,
+  "scoreboard": null,
+  "segment": {
+    "points_per_min": 1.7,
+    "off_ratio": 0.6,
+    "smooth_s": 1.0,
+    "merge_gap_s": 1.0,
+    "min_len_s": 6.0,
+    "min_hits": 0
+  },
+  "export": {
+    "pad_before_s": 1.0,
+    "pad_after_s": 1.0,
+    "top_n": 6
+  }
+}

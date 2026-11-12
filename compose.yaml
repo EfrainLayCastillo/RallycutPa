@@ -1,0 +1,17 @@
+services:
+  tools:
+    build: .
+    image: rallycutpa-tools
+    working_dir: /app
+    volumes:
+      - .:/app
+      - ${MEDIA_DIR:-./media}:/app/media
+      - uv-cache:/root/.cache/uv
+    environment:
+      UV_LINK_MODE: copy
+    entrypoint: ["bash"]
+    stdin_open: true
+    tty: true
+
+volumes:
+  uv-cache:
