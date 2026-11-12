@@ -1,112 +1,71 @@
 # RallycutPa
 
-Detecta los rallies de un partido de pádel grabado con cámara fija y arma un reel con los mejores puntos. Diseño y decisiones: [`docs/brainstorm.md`](docs/brainstorm.md).
+Detecta los rallies de un partido de pádel grabado con cámara fija y arma un reel con los mejores puntos. Decisiones y hallazgos: [`docs/brainstorm.md`](docs/brainstorm.md).
 
-## Requisitos
+## Uso
 
-- Docker (todo corre dentro de la imagen `rallycutpa-tools`: ffmpeg + uv + Python).
-- Primera vez: `docker compose build`.
+Requisito: Docker. Primera vez: `docker compose build`.
 
-## Uso rápido
+```sh
+export CONFIG=config/camera-glass.json           # config de la posición de cámara
+scripts/rc all    media/2026-11-12/game.mp4      # prepare + signals + segment
+scripts/rc export media/2026-11-12/game.mp4      # reel top 6 (--all: + clip por rally + partido limpio)
+```
 
-1. Copia el video a `media/<fecha>/` (por ejemplo `media/2026-11-12/game.mp4`). `media/` está en `.gitignore`.
-2. Elige la config de cámara (ver [Config de cámara](#config-de-cámara)):
+- Los videos van en `media/<fecha>/` (ignorado por git). Si el audio viene aparte: `scripts/rc all VIDEO AUDIO`.
+- Las salidas quedan en `media/<fecha>/work/`: `reel_top.mp4`, `clips/`, `match_clean.mp4`, `segments.csv` (rallies con puntaje) y `segments_XX.png` (curvas por tramos de 6 min).
+- Para ajustar parámetros basta con `segment` + `export`; no hace falta repetir `prepare`.
 
-   ```sh
-   export CONFIG=config/camera-glass.json
-   ```
-
-3. Analiza y exporta:
-
-   ```sh
-   scripts/rc all    media/2026-11-12/game.mp4            # proxy + señales + rallies + gráficos
-   scripts/rc export media/2026-11-12/game.mp4            # reel con los top N
-   scripts/rc export media/2026-11-12/game.mp4 --all      # además: clip por rally + partido limpio
-   ```
-
-   Si el audio viene en un archivo aparte (alineado con el video): `scripts/rc all VIDEO AUDIO`.
-
-Todo lo generado queda en `media/<fecha>/work/`:
-
-| Archivo | Contenido |
+| Comando | Qué hace |
 |---|---|
-| `reel_top.mp4` | Top N rallies por puntaje, en orden cronológico |
-| `clips/rally_###.mp4` | Clips individuales |
-| `match_clean.mp4` | Todos los rallies concatenados (`--all`) |
-| `segments.csv` | Rallies detectados: inicio, fin, rasgos y puntaje |
-| `segments_XX.png` | Curva de actividad por tramos de 6 min, con los rallies sombreados |
-
-## Comandos
-
-```
-scripts/rc probe    VIDEO                  codec, resolución, fps, intervalo de keyframes
-scripts/rc prepare  VIDEO [AUDIO]          proxy 640px @ 5 fps + audio 16 kHz mono
-scripts/rc signals  VIDEO                  rasgos por frame (movimiento, vibración, marcador, audio)
-scripts/rc segment  VIDEO                  rallies + puntaje + métricas + gráficos
-scripts/rc export   VIDEO [--all]          clips y reel
-scripts/rc sheet    VIDEO INICIO_S DUR_S   contact sheet del proxy para revisar a ojo
-scripts/rc inspect  VIDEO                  rasgos por intervalo etiquetado (labels.csv)
-scripts/rc sweep    VIDEO [TOP]            busca los mejores parámetros contra labels.csv
-```
-
-Para tunear los parámetros no hace falta re-correr `prepare` ni `signals`: basta con `segment` y `export`.
+| `probe VIDEO` | Codec, resolución, fps, keyframes |
+| `prepare VIDEO [AUDIO]` | Detecta la cámara, aplica el LUT si corresponde; proxy 640 px @ 5 fps + audio 16 kHz |
+| `signals VIDEO` | Movimiento en el ROI (cerca/lejos), vibración, marcador, audio |
+| `segment VIDEO` | Rallies, puntaje, métricas y gráficos |
+| `export VIDEO [--all]` | Reel y clips |
+| `sheet VIDEO INICIO_S DUR_S` | Contact sheet para revisar a ojo |
+| `inspect VIDEO` / `sweep VIDEO [TOP]` | Rasgos por etiqueta / mejores parámetros contra `labels.csv` |
+| `test [ARGS]` | Suite de pruebas (pytest) |
 
 ## Flujo
 
 ```mermaid
 flowchart LR
-    V[/"video.mp4<br/>(+ audio opcional)"/] --> P
+    V[/"video.mp4"/] --> P
 
     subgraph P[prepare]
-        P1["proxy 640px @ 5fps"]
-        P2["audio 16 kHz mono"]
+        P0{"¿GoPro / DJI?<br/>metadata"} -->|"sí + LUT"| P1["lut3d"]
+        P0 -->|no| P2
+        P1 --> P2["proxy 5 fps<br/>+ audio 16 kHz"]
     end
 
-    P --> S
-
-    subgraph S[signals]
-        S1["movimiento en ROI<br/>mitad cercana / lejana"]
-        S2["golpes de audio"]
-        S3["vibración · marcador"]
-    end
-
+    P --> S["signals<br/>movimiento ROI cerca/lejos<br/>audio · vibración · marcador"]
     S --> G
 
     subgraph G[segment]
-        G1["calibrar umbral<br/>duración × 1.7 puntos/min"] --> G2["histéresis + merge<br/>= rallies"]
-        G2 --> G3["puntaje 0–1"]
+        G1["calibrar umbral<br/>duración × 1.7 puntos/min"] --> G2["histéresis + merge"] --> G3["puntaje"]
     end
 
-    C[("config/camera-*.json<br/>ROI · red · parámetros")] -.-> S
-    C -.-> G
-    L[("labels.csv<br/>rally / dead")] -.-> M["métricas<br/>rally_cov · dead_leak · reel_precision"]
+    G --> E["export<br/>reel top 6 · clips · partido limpio<br/>(LUT si aplica)"]
+
+    C[("config/camera-*.json")] -.-> P & S & G
+    L[("labels.csv")] -.-> M["métricas"] & SW["sweep"]
     G --> M
-    L -.-> SW["sweep<br/>mejores parámetros"]
-    SW -.->|"se copian a"| C
-
-    G --> E
-
-    subgraph E[export]
-        E1["reel_top.mp4<br/>top 6"]
-        E2["clips/rally_###.mp4<br/>+ match_clean.mp4 (--all)"]
-    end
+    SW -.-> C
 ```
 
-El video original solo se lee en `prepare` y `export`; el análisis trabaja siempre sobre el proxy. Las líneas punteadas son el ciclo de tuning: etiquetar, medir, barrer parámetros y actualizar la config.
+El original solo se lee en `prepare` y en `export`. Las líneas punteadas son el ciclo de ajuste: etiquetar, medir, barrer parámetros y actualizar la config.
 
-## Cómo se detecta un rally
+## Detección
 
-1. **Movimiento en el ROI**: diferencia entre frames consecutivos del proxy, dentro del polígono de la cancha. Se mide por separado en la mitad cercana y en la lejana (la cercana ocupa muchos más píxeles), y cada una se normaliza por su percentil 95.
-2. **Actividad** = promedio de ambas mitades, suavizado `smooth_s` segundos.
-3. **Calibración automática**: se esperan `duración_min × points_per_min` rallies (por defecto 1.7/min, derivado de un partido de 1:30 h ≈ 155 puntos). El umbral `on` se elige para que la cantidad detectada se acerque a ese número, con `off = on × off_ratio`. Si la config no tiene `points_per_min`, se usan `on`/`off` fijos.
-4. **Histéresis**: el rally empieza cuando la actividad supera `on` y termina cuando baja de `off`. Los tramos separados por menos de `merge_gap_s` se unen; los más cortos que `min_len_s` se descartan. Si `min_hits` > 0, se exige además ese mínimo de golpes de audio.
-5. **Puntaje** (0–1): promedio de los rankings de golpes de audio, duración, pico de movimiento y pico de audio en los 3 s posteriores (festejo). El reel toma los `top_n` (por defecto 6).
+1. **Movimiento**: diferencia entre frames del proxy dentro del polígono de la cancha (ROI). Se mide por separado en la mitad cercana y en la lejana, cada una normalizada por su percentil 95, y se promedian con un suavizado de `smooth_s`.
+2. **Calibración**: se esperan `minutos × points_per_min` rallies; el valor por defecto es 1.7/min, porque un partido de 1:30 h tiene ≈ 155 puntos. El umbral `on` (con `off = on × off_ratio`) se ajusta hasta acercarse a ese número. Si la config no define `points_per_min`, se usan `on`/`off` fijos.
+3. **Histéresis**: el rally empieza al pasar `on` y termina al bajar de `off`. Se unen los tramos separados por menos de `merge_gap_s` y se descartan los que duran menos de `min_len_s`. Opcional: exigir al menos `min_hits` golpes de audio.
+4. **Puntaje**: ranking promedio de golpes, duración, pico de movimiento y pico de audio al cierre. El reel toma los `top_n`.
 
 ## Métricas
 
-### Contra etiquetas manuales (`labels.csv`)
-
-`media/<fecha>/labels.csv`, junto al video:
+`media/<fecha>/labels.csv` marca tramos que deben quedar (`rally`) y tramos que no (`dead`):
 
 ```csv
 start,end,label
@@ -114,55 +73,31 @@ start,end,label
 4:59,5:13,dead
 ```
 
-- `rally`: tramo que debe quedar. `dead`: tramo que no debe quedar (caminar al saque, buscar la pelota).
-- **rally_cov**: porcentaje de segundos `rally` que quedan dentro de algún clip (con padding). Más alto es mejor.
-- **dead_leak**: porcentaje de segundos `dead` que se colaron en algún clip. Más bajo es mejor.
-- **reel_precision**: de los segundos etiquetados que caen dentro del reel (top N), qué parte es `rally`. Es la métrica principal para highlights.
-- **kept**: porcentaje del video total que queda en rallies.
+| Métrica | Mide | Objetivo |
+|---|---|---|
+| `reel_precision` | Parte rally de los segundos etiquetados dentro del reel | Alta; es la principal |
+| `rally_cov` | Parte del tiempo `rally` que queda en algún clip | Alta |
+| `dead_leak` | Parte del tiempo `dead` que se cuela | Baja |
 
-`scripts/rc sweep` prueba combinaciones de `points_per_min`, `off_ratio`, `smooth_s`, `merge_gap_s`, `min_len_s` y padding, y ordena por `rally_cov − 2 × dead_leak` (y después por `reel_precision`). Los valores elegidos se copian a la config de cámara.
-
-Con pocas etiquetas, el sweep sobreajusta. Conviene etiquetar al menos 20 intervalos de cada tipo, repartidos por todo el partido.
-
-### Contra el marcador (solo videos con overlay)
-
-Si la config define `scoreboard`, cada cambio del marcador se toma como fin de punto. Se reporta qué porcentaje de rallies termina 1–10 s antes de un cambio (precisión) y qué porcentaje de cambios tiene un rally que termina justo antes (recall).
+`sweep` ordena por `rally_cov − 2 × dead_leak` y después por `reel_precision`. Con menos de unos 20 tramos por clase, sobreajusta. Si la config define `scoreboard` (videos con marcador superpuesto), cada cambio del marcador también se usa como fin de punto.
 
 ## Config de cámara
 
-Un JSON por posición de cámara en `config/` (coordenadas en píxeles del video original):
+Un JSON por posición en `config/`, con coordenadas en píxeles del original:
 
-- `roi`: polígono de la cancha. Excluye las canchas vecinas visibles por los costados.
-- `net_y`: altura de la red; separa la mitad cercana de la lejana.
-- `scoreboard` / `board_threshold`: zona del marcador superpuesto, o `null`.
-- `segment`: parámetros de detección (ver arriba): `points_per_min`, `off_ratio`, `smooth_s`, `merge_gap_s`, `min_len_s`, `min_hits`. Opcional: `on`/`off` fijos, sin `points_per_min`.
-- `export`: `pad_before_s`, `pad_after_s`, `top_n`.
-- `luts`: LUT por fabricante (`gopro`, `dji`) para videos grabados en log. Ver abajo.
+- `roi`: polígono de la cancha, sin las canchas vecinas.
+- `net_y`: altura de la red.
+- `scoreboard`: zona del marcador superpuesto, o `null`.
+- `segment` y `export`: los parámetros de arriba.
+- `luts`: LUT por fabricante.
 
-### Videos en log (GoPro GP-Log, DJI D-Log M)
+Configs disponibles:
 
-`prepare` lee la metadata del contenedor para saber el fabricante (GoPro o DJI; si no lo reconoce, `unknown`). Si la config tiene un LUT para ese fabricante y el archivo existe, el LUT se aplica:
+- `camera-glass.json`: cámara baja, pegada al vidrio de fondo. Es el ángulo objetivo.
+- `camera-outside-glass.json`: export de RADAR, cámara alta y con marcador.
 
-- al **proxy de análisis**: el log tiene poco contraste y sin LUT se detecta menos movimiento;
-- a los **exports** (reel y clips), que ya se reencodean.
-
-El original no se toca. Los `.cube` no se versionan: se descargan de la web oficial del fabricante y se guardan en `luts/` con el nombre que indique la config (`luts/dji-dlogm.cube`, `luts/gopro-gplog.cube`). Si falta el archivo, se avisa y se sigue sin conversión.
-
-La metadata solo dice el fabricante, no el perfil de color. Si esa cámara grabó en color normal, hay que quitar el LUT de la config, porque aplicarle un LUT de log lo deja sobresaturado. `scripts/rc prepare` muestra la cámara y el LUT que usó.
-
-Configs actuales:
-
-- `camera-glass.json`: cámara baja pegada al vidrio de fondo (ángulo objetivo).
-- `camera-outside-glass.json`: export de RADAR con marcador (cámara alta, fuera del vidrio).
+**Videos en log** (GoPro GP-Log, DJI D-Log M como la Osmo Action 5 Pro): `prepare` detecta el fabricante por la metadata y aplica `luts.<fabricante>` al proxy y a los exports; el original no se toca. Los `.cube` se bajan de la web del fabricante a `luts/` y no se versionan. La metadata no dice si se grabó en log: si la cámara grabó en color normal, quita el LUT de la config.
 
 ## Estado (2026-11-12)
 
-En el video de prueba de cámara pegada al vidrio (11 tramos etiquetados):
-
-| Config | rally_cov | dead_leak | reel_precision (top 6) |
-|---|---|---|---|
-| Umbral fijo sensible | 100% | 99% | — |
-| Umbral fijo estricto | 41% | 10% | — |
-| **Auto 1.7 puntos/min (actual)** | 69% | 66% | **89%** |
-
-El reel de highlights funciona razonablemente. El partido limpio todavía no: caminar al saque o buscar la pelota se ve igual que jugar. Hallazgos y próximos pasos en [`docs/brainstorm.md`](docs/brainstorm.md).
+En el video de prueba con la cámara pegada al vidrio (11 tramos etiquetados), la calibración automática dio `reel_precision` 89%, `rally_cov` 69% y `dead_leak` 66%. El reel funciona razonablemente. El partido limpio todavía no, porque caminar al saque o buscar la pelota se ve igual que jugar.

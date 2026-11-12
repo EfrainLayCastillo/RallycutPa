@@ -18,6 +18,7 @@ Usage: scripts/rc <command> VIDEO [args]
   inspect  VIDEO                  motion/audio features per interval of labels.csv
   sweep    VIDEO [TOP]            grid-search segment params against labels.csv
   all      VIDEO [AUDIO]          prepare + signals + segment
+  test     [PYTEST ARGS]          run the test suite
 
 Outputs go to <video dir>/work. Camera config: CONFIG=$CONFIG
 EOF
@@ -98,6 +99,12 @@ sheet() {
 
 run_py() { uv run -q "scripts/$1.py" "$(work_dir "$2")" "$CONFIG" "${@:3}"; }
 
+run_tests() {
+  uv run -q --with pytest --with numpy --with scipy --with opencv-python-headless --with matplotlib \
+    pytest -q tests "$@"
+}
+
+[ "${1:-}" = test ] && { shift; run_tests "$@"; exit; }
 [ $# -ge 2 ] || usage
 cmd=$1; shift
 case $cmd in
