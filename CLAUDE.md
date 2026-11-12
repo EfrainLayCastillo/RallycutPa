@@ -10,8 +10,9 @@ Herramienta local (Mac + Docker) que convierte grabaciones de pádel con cámara
 ## Estructura
 
 - `scripts/highlights VIDEO`: de punta a punta (quick start). `scripts/rc <cmd>`: cada etapa por separado, dentro del contenedor `tools`.
-- `scripts/*.py`: scripts uv con dependencias inline (`signals`, `segment`, `export`, `sweep`, `labels`).
-- `config/camera-*.json`: ROI, parámetros y LUTs por posición de cámara.
+- `scripts/*.py`: scripts uv con dependencias inline (`chapters`, `calibrate`, `signals`, `segment`, `export`, `sweep`, `labels`).
+- `config/camera-*.json`: plantilla y configs fijas; por defecto la config se deriva del encuadre (`calibrate` → `work/camera.json`).
+- Una grabación por carpeta en `media/<date>/`; las partes de una grabación se unen en `work/source.mp4`.
 - `tests/`: pytest; se corre con `scripts/rc test`.
 
 ## Idioma

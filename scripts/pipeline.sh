@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CONFIG=${CONFIG:-config/camera-glass.json}
+TEMPLATE_CONFIG=config/camera-glass.json
 PROXY_FPS=5
 
 usage() {
@@ -10,7 +10,8 @@ usage() {
 Usage: scripts/rc <command> VIDEO [args]
 
   probe    VIDEO                  codec, resolution, fps, keyframe interval
-  prepare  VIDEO [AUDIO]          proxy 360p@${PROXY_FPS}fps + audio 16 kHz mono
+  prepare  VIDEO [AUDIO]          merge chapters, LUT, proxy @${PROXY_FPS}fps, audio 16 kHz, auto camera config
+  calibrate VIDEO                 camera config (court ROI + net) from the framing -> work/camera.json
   signals  VIDEO                  motion/shake/scoreboard/audio features
   segment  VIDEO                  detect rallies, score, evaluate vs scoreboard, plots
   export   VIDEO [--all]          top-N clips + reel (--all: every rally + clean match)
@@ -21,12 +22,24 @@ Usage: scripts/rc <command> VIDEO [args]
   run      VIDEO [AUDIO] [--all]  end to end: all + export
   test     [PYTEST ARGS]          run the test suite
 
-Outputs go to <video dir>/work. Camera config: CONFIG=$CONFIG
+One recording per folder; outputs go to <video dir>/work.
+Camera config: \$CONFIG if set, else <video dir>/work/camera.json (auto), else $TEMPLATE_CONFIG.
 EOF
   exit 1
 }
 
 work_dir() { echo "$(dirname "$1")/work"; }
+
+config_for() {
+  local auto
+  auto="$(work_dir "$1")/camera.json"
+  if [ -n "${CONFIG:-}" ]; then echo "$CONFIG"
+  elif [ -f "$auto" ]; then echo "$auto"
+  else echo "$TEMPLATE_CONFIG"
+  fi
+}
+
+json_field() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2]) or "")' "$1" "$2"; }
 
 has_audio() {
   [ -n "$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$1")" ]
@@ -52,10 +65,10 @@ camera_maker() {
   esac
 }
 
-# Log footage (GoPro GP-Log, DJI D-Log M) needs the maker's LUT; configured in $CONFIG under "luts".
+# Log footage (GoPro GP-Log, DJI D-Log M) needs the maker's LUT; configured in the camera config under "luts".
 lut_for() {
   local lut
-  lut=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("luts", {}).get(sys.argv[2], ""))' "$CONFIG" "$1")
+  lut=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("luts", {}).get(sys.argv[2], ""))' "$2" "$1")
   if [ -n "$lut" ] && [ ! -f "$lut" ]; then
     echo "warning: LUT for $1 not found at $lut, continuing without color conversion" >&2
     lut=""
@@ -63,30 +76,68 @@ lut_for() {
   echo "$lut"
 }
 
+# Cameras split long recordings into chapters. Merge them into one easy-to-decode H.264 1080p file
+# (LUT baked in, keyframe every second) and use it as the source for everything downstream.
+merge_chapters() {
+  local video=$1 work=$2 lut=$3 parts out list vf
+  mapfile -t parts < <(uv run -q scripts/chapters.py "$video")
+  if [ "${#parts[@]}" -le 1 ]; then echo "$video"; return; fi
+  out="$work/source.mp4"
+  echo "split recording: ${#parts[@]} chapters -> $out" >&2
+  if [ -f "$out" ]; then echo "reusing $out (delete it to rebuild)" >&2; echo "$out"; return; fi
+  list="$work/chapters.txt"
+  for part in "${parts[@]}"; do printf "file '%s'\n" "$(realpath "$part")"; done > "$list"
+  vf="scale=-2:'min(1080,ih)'"
+  [ -n "$lut" ] && vf="lut3d=$lut,$vf"
+  ffmpeg -v error -y -f concat -safe 0 -i "$list" -map 0:v:0 -map '0:a:0?' -vf "$vf" -pix_fmt yuv420p \
+    -c:v libx264 -preset veryfast -crf 18 -force_key_frames 'expr:gte(t,n_forced)' \
+    -c:a aac -b:a 192k "$out.tmp.mp4" >&2
+  mv "$out.tmp.mp4" "$out"
+  echo "$out"
+}
+
+make_proxy() {
+  local source=$1 work=$2 lut=$3 vf="fps=$PROXY_FPS,scale=640:-2"
+  [ -n "$lut" ] && vf="lut3d=$lut,$vf"
+  ffmpeg -v error -y -i "$source" -vf "$vf" -an -pix_fmt yuv420p \
+    -c:v libx264 -crf 23 -preset veryfast -g "$PROXY_FPS" "$work/proxy.mp4"
+}
+
+extract_audio() {
+  local audio=$1 work=$2
+  if has_audio "$audio"; then
+    ffmpeg -v error -y -i "$audio" -vn -ac 1 -ar 16000 "$work/audio16k.wav"
+    echo "\"$audio\""
+  else
+    rm -f "$work/audio16k.wav"
+    echo "no audio track: motion-only analysis" >&2
+    echo null
+  fi
+}
+
 prepare() {
-  local video=$1 audio=${2:-$1} work audio_json=null maker lut lut_json=null vf
+  local video=$1 audio=${2:-} work maker lut source audio_json
   work=$(work_dir "$video")
   mkdir -p "$work"
   maker=$(camera_maker "$video")
-  lut=$(lut_for "$maker")
-  vf="fps=$PROXY_FPS,scale=640:-2"
-  if [ -n "$lut" ]; then
-    vf="lut3d=$lut,$vf"
-    lut_json="\"$lut\""
-  fi
+  lut=$(lut_for "$maker" "$(config_for "$video")")
   echo "camera: $maker | LUT: ${lut:-none}"
-  ffmpeg -v error -y -i "$video" -vf "$vf" -an -pix_fmt yuv420p \
-    -c:v libx264 -crf 23 -preset veryfast -g "$PROXY_FPS" "$work/proxy.mp4"
-  if has_audio "$audio"; then
-    ffmpeg -v error -y -i "$audio" -vn -ac 1 -ar 16000 "$work/audio16k.wav"
-    audio_json="\"$audio\""
-  else
-    rm -f "$work/audio16k.wav"
-    echo "no audio track: motion-only analysis"
-  fi
+  source=$(merge_chapters "$video" "$work" "$lut")
+  [ "$source" != "$video" ] && lut=""
+  make_proxy "$source" "$work" "$lut"
+  audio_json=$(extract_audio "${audio:-$source}" "$work")
   printf '{"video": "%s", "audio": %s, "camera": "%s", "lut": %s}\n' \
-    "$video" "$audio_json" "$maker" "$lut_json" > "$work/meta.json"
+    "$source" "$audio_json" "$maker" "$( [ -n "$lut" ] && echo "\"$lut\"" || echo null )" > "$work/meta.json"
   echo "prepared $work"
+  [ -n "${CONFIG:-}" ] || calibrate "$video"
+}
+
+calibrate() {
+  local video=$1 work source
+  work=$(work_dir "$video")
+  source=$video
+  [ -f "$work/meta.json" ] && source=$(json_field "$work/meta.json" video)
+  uv run -q scripts/calibrate.py "$source" "${CONFIG:-$TEMPLATE_CONFIG}" "$work/camera.json" "$work/calibration.jpg"
 }
 
 sheet() {
@@ -98,7 +149,7 @@ sheet() {
   echo "$work/sheet_${start}s.jpg"
 }
 
-run_py() { uv run -q "scripts/$1.py" "$(work_dir "$2")" "$CONFIG" "${@:3}"; }
+run_py() { uv run -q "scripts/$1.py" "$(work_dir "$2")" "$(config_for "$2")" "${@:3}"; }
 
 run_all() {
   local export_flag="" args=()
@@ -122,6 +173,7 @@ cmd=$1; shift
 case $cmd in
   probe)   probe "$@" ;;
   prepare) prepare "$@" ;;
+  calibrate) calibrate "$@" ;;
   signals) run_py signals "$@" ;;
   segment) run_py segment "$@" ;;
   export)  run_py export "$@" ;;

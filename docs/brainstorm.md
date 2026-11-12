@@ -14,7 +14,9 @@ De un partido de 1:30–2 h con cámara fija:
 | Tema | Decisión | Por qué |
 |---|---|---|
 | Cámara | Fija, pegada al vidrio de fondo, baja | Es el montaje real del club. La pareja cercana sale grande y a veces fuera de cuadro; la lejana, chica y de frente. |
-| ROI | Polígono por posición de cámara, movimiento separado cerca/lejos | Las canchas vecinas se ven por los costados; la pareja cercana domina los píxeles. |
+| ROI | Se saca del encuadre (color del piso + cinta de la red) y el movimiento se separa cerca/lejos | Cada cámara encuadra distinto; las canchas vecinas se ven por los costados; la pareja cercana domina los píxeles. |
+| Grabaciones partidas | Se detectan (nombre GoPro o timestamps contiguos) y se unen en H.264 1080p con keyframe cada 1 s | Un solo archivo fácil de decodificar y de cortar con precisión; los originales quedan intactos. |
+| Alcance | Un video a la vez, una grabación por carpeta | Simple; el lote viene después. |
 | Audio | Solo confirma, desactivado por defecto | Se oyen las canchas vecinas: los golpes propios no se destacan. |
 | Umbral | Calibrado por puntos esperados (1.7/min) | Evita ajustarlo a mano por video o por iluminación. |
 | Color | LUT por fabricante (GoPro / DJI) en el proxy y los exports | El log tiene poco contraste y afecta la detección. El original no se toca. |
@@ -31,6 +33,7 @@ De un partido de 1:30–2 h con cámara fija:
   - `auto-editor` (no tiene ROI y su binario no corre en arm64);
   - quitar metadatos para reducir peso (ahorra KB).
 - **Sin vibración visible** con este montaje.
+- **El ROI automático rinde igual que el dibujado a mano:** red en 462 contra 460, y `reel_precision` 88% contra 89%.
 
 ## Próximos pasos
 
@@ -39,8 +42,9 @@ De un partido de 1:30–2 h con cámara fija:
    - YOLO de personas con velocidad o pose (split-step y swing ≠ caminar). Ojo con la licencia AGPL de ultralytics.
    - Tracking de pelota (TrackNet): la señal más directa, pero exige ≥1080p.
 3. Crop 9:16 que siga a la pareja lejana, con suavizado fuerte y fallback a crop centrado.
-4. Encode nativo con VideoToolbox y concatenación de capítulos GoPro en `prepare`.
-5. Validar el LUT de D-Log M con un clip real de la Osmo Action 5 Pro.
+4. Encode nativo con VideoToolbox: la unión de partes en 4K es lenta en Docker.
+5. Validar con una grabación real de la Osmo Action 5 Pro: LUT de D-Log M, detección de partes por timestamps y calibración en 4:3.
+6. Procesamiento en lote (varios videos o carpetas).
 
 ## Preguntas abiertas
 

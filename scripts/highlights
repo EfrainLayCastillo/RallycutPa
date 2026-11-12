@@ -5,9 +5,10 @@ cd "$(dirname "$0")/.."
 
 usage() {
   echo "Usage: scripts/highlights VIDEO [AUDIO] [--all]"
-  echo "  VIDEO must live inside this repo (e.g. media/<date>/game.mp4)"
+  echo "  VIDEO must live inside this repo, one recording per folder (e.g. media/<date>/game.mp4)."
+  echo "  Split recordings (GoPro/DJI chapters) are detected and merged automatically."
   echo "  --all   also export one clip per rally and the clean match"
-  echo "  CONFIG=config/camera-*.json selects the camera position (default: camera-glass)"
+  echo "  CONFIG=config/camera-*.json forces a camera config (default: derived from the framing)"
   exit 1
 }
 
@@ -27,3 +28,4 @@ echo
 echo "reel:     $work/reel_top.mp4"
 echo "rallies:  $work/segments.csv"
 echo "curves:   $work/segments_*.png"
+[ -f "$work/calibration.jpg" ] && echo "court:    $work/calibration.jpg (auto ROI: check it once per camera)"
