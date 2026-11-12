@@ -51,6 +51,49 @@ scripts/rc sweep    VIDEO [TOP]            busca los mejores parámetros contra 
 
 Para tunear los parámetros no hace falta re-correr `prepare` ni `signals`: basta con `segment` y `export`.
 
+## Flujo
+
+```mermaid
+flowchart LR
+    V[/"video.mp4<br/>(+ audio opcional)"/] --> P
+
+    subgraph P[prepare]
+        P1["proxy 640px @ 5fps"]
+        P2["audio 16 kHz mono"]
+    end
+
+    P --> S
+
+    subgraph S[signals]
+        S1["movimiento en ROI<br/>mitad cercana / lejana"]
+        S2["golpes de audio"]
+        S3["vibración · marcador"]
+    end
+
+    S --> G
+
+    subgraph G[segment]
+        G1["calibrar umbral<br/>duración × 1.7 puntos/min"] --> G2["histéresis + merge<br/>= rallies"]
+        G2 --> G3["puntaje 0–1"]
+    end
+
+    C[("config/camera-*.json<br/>ROI · red · parámetros")] -.-> S
+    C -.-> G
+    L[("labels.csv<br/>rally / dead")] -.-> M["métricas<br/>rally_cov · dead_leak · reel_precision"]
+    G --> M
+    L -.-> SW["sweep<br/>mejores parámetros"]
+    SW -.->|"se copian a"| C
+
+    G --> E
+
+    subgraph E[export]
+        E1["reel_top.mp4<br/>top 6"]
+        E2["clips/rally_###.mp4<br/>+ match_clean.mp4 (--all)"]
+    end
+```
+
+El video original solo se lee en `prepare` y `export`; el análisis trabaja siempre sobre el proxy. Las líneas punteadas son el ciclo de tuning: etiquetar, medir, barrer parámetros y actualizar la config.
+
 ## Cómo se detecta un rally
 
 1. **Movimiento en el ROI**: diferencia entre frames consecutivos del proxy, dentro del polígono de la cancha. Se mide por separado en la mitad cercana y en la lejana (la cercana ocupa muchos más píxeles), y cada una se normaliza por su percentil 95.
