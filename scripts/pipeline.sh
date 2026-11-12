@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CONFIG=${CONFIG:-config/camera-radar.json}
+CONFIG=${CONFIG:-config/camera-glass.json}
 PROXY_FPS=5
 
 usage() {
@@ -40,11 +40,40 @@ probe() {
   echo
 }
 
+camera_maker() {
+  local tags
+  tags=$(ffprobe -v error -show_entries format_tags:stream_tags -of default=nw=1 "$1" | tr '[:upper:]' '[:lower:]')
+  case $tags in
+    *gopro*) echo gopro ;;
+    *dji*)   echo dji ;;
+    *)       echo unknown ;;
+  esac
+}
+
+# Log footage (GoPro GP-Log, DJI D-Log M) needs the maker's LUT; configured in $CONFIG under "luts".
+lut_for() {
+  local lut
+  lut=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("luts", {}).get(sys.argv[2], ""))' "$CONFIG" "$1")
+  if [ -n "$lut" ] && [ ! -f "$lut" ]; then
+    echo "warning: LUT for $1 not found at $lut, continuing without color conversion" >&2
+    lut=""
+  fi
+  echo "$lut"
+}
+
 prepare() {
-  local video=$1 audio=${2:-$1} work audio_json=null
+  local video=$1 audio=${2:-$1} work audio_json=null maker lut lut_json=null vf
   work=$(work_dir "$video")
   mkdir -p "$work"
-  ffmpeg -v error -y -i "$video" -vf "fps=$PROXY_FPS,scale=640:-2" -an \
+  maker=$(camera_maker "$video")
+  lut=$(lut_for "$maker")
+  vf="fps=$PROXY_FPS,scale=640:-2"
+  if [ -n "$lut" ]; then
+    vf="lut3d=$lut,$vf"
+    lut_json="\"$lut\""
+  fi
+  echo "camera: $maker | LUT: ${lut:-none}"
+  ffmpeg -v error -y -i "$video" -vf "$vf" -an -pix_fmt yuv420p \
     -c:v libx264 -crf 23 -preset veryfast -g "$PROXY_FPS" "$work/proxy.mp4"
   if has_audio "$audio"; then
     ffmpeg -v error -y -i "$audio" -vn -ac 1 -ar 16000 "$work/audio16k.wav"
@@ -53,7 +82,8 @@ prepare() {
     rm -f "$work/audio16k.wav"
     echo "no audio track: motion-only analysis"
   fi
-  printf '{"video": "%s", "audio": %s}\n' "$video" "$audio_json" > "$work/meta.json"
+  printf '{"video": "%s", "audio": %s, "camera": "%s", "lut": %s}\n' \
+    "$video" "$audio_json" "$maker" "$lut_json" > "$work/meta.json"
   echo "prepared $work"
 }
 

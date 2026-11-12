@@ -137,11 +137,23 @@ Un JSON por posición de cámara en `config/` (coordenadas en píxeles del video
 - `scoreboard` / `board_threshold`: zona del marcador superpuesto, o `null`.
 - `segment`: parámetros de detección (ver arriba): `points_per_min`, `off_ratio`, `smooth_s`, `merge_gap_s`, `min_len_s`, `min_hits`. Opcional: `on`/`off` fijos, sin `points_per_min`.
 - `export`: `pad_before_s`, `pad_after_s`, `top_n`.
+- `luts`: LUT por fabricante (`gopro`, `dji`) para videos grabados en log. Ver abajo.
+
+### Videos en log (GoPro GP-Log, DJI D-Log M)
+
+`prepare` lee la metadata del contenedor para saber el fabricante (GoPro o DJI; si no lo reconoce, `unknown`). Si la config tiene un LUT para ese fabricante y el archivo existe, el LUT se aplica:
+
+- al **proxy de análisis**: el log tiene poco contraste y sin LUT se detecta menos movimiento;
+- a los **exports** (reel y clips), que ya se reencodean.
+
+El original no se toca. Los `.cube` no se versionan: se descargan de la web oficial del fabricante y se guardan en `luts/` con el nombre que indique la config (`luts/dji-dlogm.cube`, `luts/gopro-gplog.cube`). Si falta el archivo, se avisa y se sigue sin conversión.
+
+La metadata solo dice el fabricante, no el perfil de color. Si esa cámara grabó en color normal, hay que quitar el LUT de la config, porque aplicarle un LUT de log lo deja sobresaturado. `scripts/rc prepare` muestra la cámara y el LUT que usó.
 
 Configs actuales:
 
 - `camera-glass.json`: cámara baja pegada al vidrio de fondo (ángulo objetivo).
-- `camera-radar.json`: export de RADAR con marcador.
+- `camera-outside-glass.json`: export de RADAR con marcador (cámara alta, fuera del vidrio).
 
 ## Estado (2026-11-12)
 

@@ -23,6 +23,8 @@ def encode_clip(meta, start, end, out, encoder):
         cmd += ["-ss", f"{start:.2f}", "-i", meta["audio"], "-map", "0:v:0", "-map", "1:a:0"]
     else:
         cmd += ["-map", "0:v:0", "-map", "0:a:0?"]
+    if meta.get("lut"):
+        cmd += ["-vf", f"lut3d={meta['lut']}"]
     cmd += ["-t", f"{end - start:.2f}", *encoder, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", str(out)]
     subprocess.run(cmd, check=True)
 
