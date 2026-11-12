@@ -9,7 +9,7 @@ Herramienta local (Mac + Docker) que convierte grabaciones de pádel con cámara
 
 ## Estructura
 
-- `scripts/rc <cmd>`: corre `scripts/pipeline.sh` dentro del contenedor `tools`. Es el punto de entrada para todo.
+- `scripts/highlights VIDEO`: de punta a punta (quick start). `scripts/rc <cmd>`: cada etapa por separado, dentro del contenedor `tools`.
 - `scripts/*.py`: scripts uv con dependencias inline (`signals`, `segment`, `export`, `sweep`, `labels`).
 - `config/camera-*.json`: ROI, parámetros y LUTs por posición de cámara.
 - `tests/`: pytest; se corre con `scripts/rc test`.

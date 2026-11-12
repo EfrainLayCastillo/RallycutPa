@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# One command from a raw video to the highlights reel: builds the image if needed, then runs every stage.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+usage() {
+  echo "Usage: scripts/highlights VIDEO [AUDIO] [--all]"
+  echo "  VIDEO must live inside this repo (e.g. media/<date>/game.mp4)"
+  echo "  --all   also export one clip per rally and the clean match"
+  echo "  CONFIG=config/camera-*.json selects the camera position (default: camera-glass)"
+  exit 1
+}
+
+[ $# -ge 1 ] || usage
+video=$1
+[ -f "$video" ] || { echo "video not found: $video" >&2; exit 1; }
+case "$(cd "$(dirname "$video")" && pwd)/" in
+  "$PWD"/*) ;;
+  *) echo "video must be inside $PWD (Docker only sees the repo); copy it to media/<date>/" >&2; exit 1 ;;
+esac
+
+docker image inspect rallycutpa-tools >/dev/null 2>&1 || docker compose build
+scripts/rc run "$@"
+
+work="$(dirname "$video")/work"
+echo
+echo "reel:     $work/reel_top.mp4"
+echo "rallies:  $work/segments.csv"
+echo "curves:   $work/segments_*.png"

@@ -56,6 +56,9 @@ def main(work, config, *flags):
     work, cfg = Path(work), json.loads(Path(config).read_text())
     meta = json.loads((work / "meta.json").read_text())
     rallies = list(csv.DictReader(open(work / "segments.csv")))
+    if not rallies:
+        print("no rallies detected: nothing to export (check CONFIG roi/params or the curves in segments_*.png)")
+        return
     clips_dir = work / "clips"
     clips_dir.mkdir(exist_ok=True)
     for old in clips_dir.glob("*.mp4"):

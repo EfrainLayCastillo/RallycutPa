@@ -18,6 +18,7 @@ Usage: scripts/rc <command> VIDEO [args]
   inspect  VIDEO                  motion/audio features per interval of labels.csv
   sweep    VIDEO [TOP]            grid-search segment params against labels.csv
   all      VIDEO [AUDIO]          prepare + signals + segment
+  run      VIDEO [AUDIO] [--all]  end to end: all + export
   test     [PYTEST ARGS]          run the test suite
 
 Outputs go to <video dir>/work. Camera config: CONFIG=$CONFIG
@@ -99,6 +100,17 @@ sheet() {
 
 run_py() { uv run -q "scripts/$1.py" "$(work_dir "$2")" "$CONFIG" "${@:3}"; }
 
+run_all() {
+  local export_flag="" args=()
+  for arg in "$@"; do
+    if [ "$arg" = --all ]; then export_flag=--all; else args+=("$arg"); fi
+  done
+  prepare "${args[@]}"
+  run_py signals "${args[0]}"
+  run_py segment "${args[0]}"
+  run_py export "${args[0]}" $export_flag
+}
+
 run_tests() {
   uv run -q --with pytest --with numpy --with scipy --with opencv-python-headless --with matplotlib \
     pytest -q tests "$@"
@@ -117,5 +129,6 @@ case $cmd in
   inspect) run_py inspect_labels "$@" ;;
   sweep)   run_py sweep "$@" ;;
   all)     prepare "$@" && run_py signals "$1" && run_py segment "$1" ;;
+  run)     run_all "$@" ;;
   *)       usage ;;
 esac

@@ -70,3 +70,13 @@ def test_signals_and_segment_run_on_prepared_video(tmp_path, camera_config):
     out = run_pipeline("segment", str(video), config=camera_config)
     assert "rallies:" in out
     assert (tmp_path / "work/segments.csv").exists()
+
+
+@pytest.mark.skipif(shutil.which("uv") is None, reason="uv not installed")
+def test_run_goes_end_to_end_with_all_flag(tmp_path, camera_config):
+    video = tmp_path / "game.mp4"
+    make_video(video)
+    run_pipeline("run", str(video), "--all", config=camera_config)
+    work = tmp_path / "work"
+    for name in ("proxy.mp4", "signals.npz", "segments.csv", "meta.json"):
+        assert (work / name).exists(), name

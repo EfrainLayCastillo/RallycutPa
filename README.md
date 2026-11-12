@@ -2,17 +2,33 @@
 
 Detecta los rallies de un partido de pádel grabado con cámara fija y arma un reel con los mejores puntos. Decisiones y hallazgos: [`docs/brainstorm.md`](docs/brainstorm.md).
 
-## Uso
+## Quick start
 
-Requisito: Docker. Primera vez: `docker compose build`.
+Requisito: Docker corriendo.
 
 ```sh
-export CONFIG=config/camera-glass.json           # config de la posición de cámara
-scripts/rc all    media/2026-11-12/game.mp4      # prepare + signals + segment
-scripts/rc export media/2026-11-12/game.mp4      # reel top 6 (--all: + clip por rally + partido limpio)
+mkdir -p media/2026-11-12 && cp ~/Movies/partido.mp4 media/2026-11-12/game.mp4
+scripts/highlights media/2026-11-12/game.mp4
 ```
 
-- Los videos van en `media/<fecha>/` (ignorado por git). Si el audio viene aparte: `scripts/rc all VIDEO AUDIO`.
+Un solo comando hace todo: construye la imagen si falta, prepara el video (detecta la cámara y aplica el LUT), detecta los rallies, los puntúa y exporta el reel. Tarda unos 3 min por cada 20 min de video. Al final imprime dónde quedó `reel_top.mp4`.
+
+| Variante | Comando |
+|---|---|
+| También clip por rally y partido limpio | `scripts/highlights VIDEO --all` |
+| Audio en un archivo aparte | `scripts/highlights VIDEO AUDIO` |
+| Otra posición de cámara | `CONFIG=config/camera-outside-glass.json scripts/highlights VIDEO` |
+
+El video tiene que estar dentro del repo (por convención en `media/<fecha>/`, que git ignora), porque Docker solo ve esta carpeta.
+
+## Uso por etapas
+
+```sh
+export CONFIG=config/camera-glass.json
+scripts/rc all    media/2026-11-12/game.mp4      # prepare + signals + segment
+scripts/rc export media/2026-11-12/game.mp4      # reel top 6
+```
+
 - Las salidas quedan en `media/<fecha>/work/`: `reel_top.mp4`, `clips/`, `match_clean.mp4`, `segments.csv` (rallies con puntaje) y `segments_XX.png` (curvas por tramos de 6 min).
 - Para ajustar parámetros basta con `segment` + `export`; no hace falta repetir `prepare`.
 
@@ -24,6 +40,7 @@ scripts/rc export media/2026-11-12/game.mp4      # reel top 6 (--all: + clip por
 | `segment VIDEO` | Rallies, puntaje, métricas y gráficos |
 | `export VIDEO [--all]` | Reel y clips |
 | `sheet VIDEO INICIO_S DUR_S` | Contact sheet para revisar a ojo |
+| `run VIDEO [AUDIO] [--all]` | Todo lo anterior en un paso (lo usa `scripts/highlights`) |
 | `inspect VIDEO` / `sweep VIDEO [TOP]` | Rasgos por etiqueta / mejores parámetros contra `labels.csv` |
 | `test [ARGS]` | Suite de pruebas (pytest) |
 
